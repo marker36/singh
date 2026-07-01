@@ -8,6 +8,7 @@
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
@@ -34,23 +35,36 @@
 
 <style>
   html { scroll-behavior: smooth; }
+
+  /* CRITICAL: body must NOT have an opaque background-color, or it will
+     paint over any fixed element with z-index below it — including a
+     z-index:0 canvas sitting under z-index:10+ content. Keep this
+     transparent; the canvas paints its own dark backdrop instead. */
   body {
-    background-color: #08080d;
+    background-color: transparent;
     color: #f5f5f7;
     font-family: 'Inter', sans-serif;
     overflow-x: hidden;
     position: relative;
   }
 
-  #dragon-canvas {
+  html {
+    background-color: #06060a; /* fallback color while WebGL boots */
+  }
+
+  #bg-canvas {
     position: fixed;
     top: 0; left: 0;
     width: 100vw;
     height: 100vh;
-    z-index: -1;
+    z-index: 0;              /* NOT negative — sits above <html>/<body>
+                                 background paint, below all content */
     pointer-events: none;
     display: block;
   }
+
+  /* Everything visible in the page content sits above the canvas */
+  header, section, footer { position: relative; z-index: 10; }
 
   .section-pad { padding-top: 6rem; padding-bottom: 6rem; }
   ::selection { background: #34e5b0; color: #0a0a0f; }
@@ -158,7 +172,7 @@
 
 <body class="font-body antialiased">
 
-  <canvas id="dragon-canvas"></canvas>
+  <canvas id="bg-canvas"></canvas>
 
   <header class="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
     <nav class="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
@@ -174,7 +188,7 @@
     </nav>
   </header>
 
-  <section id="top" class="relative z-10 section-pad pt-40 md:pt-48 px-6">
+  <section id="top" class="section-pad pt-40 md:pt-48 px-6">
     <div class="max-w-4xl mx-auto">
       <p class="eyebrow text-emerald text-xs mb-6 uppercase text-shadow-glow">// available for freelance — Q3 2026</p>
       <h1 class="font-display font-semibold text-4xl sm:text-5xl md:text-7xl leading-[1.05] tracking-tight text-shadow-glow">
@@ -198,7 +212,7 @@
     </div>
   </section>
 
-  <section id="links" class="relative z-10 section-pad pt-0 px-6">
+  <section id="links" class="section-pad pt-0 px-6">
     <div class="max-w-4xl mx-auto">
       <p class="eyebrow text-violet text-xs mb-4 uppercase text-shadow-glow">find me elsewhere</p>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -222,7 +236,7 @@
     </div>
   </section>
 
-  <section id="projects" class="relative z-10 section-pad px-6">
+  <section id="projects" class="section-pad px-6">
     <div class="max-w-6xl mx-auto">
       <p class="eyebrow text-emerald text-xs mb-3 uppercase text-shadow-glow">selected work</p>
       <h2 class="font-display font-semibold text-3xl md:text-4xl mb-12 tracking-tight text-shadow-glow">Featured projects</h2>
@@ -274,7 +288,7 @@
     </div>
   </section>
 
-  <footer id="contact" class="relative z-10 border-t border-white/5 px-6 pt-20 pb-10">
+  <footer id="contact" class="border-t border-white/5 px-6 pt-20 pb-10">
     <div class="max-w-4xl mx-auto text-center">
       <h2 class="font-display font-semibold text-3xl md:text-5xl tracking-tight mb-4 text-shadow-glow">
         Let's <span class="grad-text">collaborate.</span>
@@ -295,372 +309,199 @@
     document.getElementById('year').textContent = new Date().getFullYear();
 
     /* =========================================================
-       PROCEDURAL IK SERPENT / DRAGON
-       Canvas 2D, chain-follow inverse kinematics, harmonic
-       wave propagation, tapered scaled body, neon additive glow
+       3D REACTIVE WAVE FIELD (Three.js)
+       Real depth: a grid of points in 3D space, each oscillating
+       in Z via a sine/cosine height function, camera parallax on
+       mouse move, particles brighten/lift near the cursor.
        ========================================================= */
-    (function initDragon() {
-      const canvas = document.getElementById('dragon-canvas');
-      const ctx = canvas.getContext('2d');
+    (function initBackground() {
+      const canvas = document.getElementById('bg-canvas');
       const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const isTouchDevice = !window.matchMedia('(hover: hover)').matches;
 
-      let dpr = Math.min(window.devicePixelRatio || 1, 2);
-      let W = 0, H = 0;
-
-      function resize() {
-        dpr = Math.min(window.devicePixelRatio || 1, 2);
-        W = window.innerWidth;
-        H = window.innerHeight;
-        canvas.width = W * dpr;
-        canvas.height = H * dpr;
-        canvas.style.width = W + 'px';
-        canvas.style.height = H + 'px';
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      }
-      window.addEventListener('resize', resize);
-      resize();
-
-      // ---------- Chain configuration ----------
-      const SEGMENT_COUNT = 42;
-      const SEG_LEN = 13.5;              // fixed link length between joints
-      const HEAD_RADIUS = 15;
-      const TAIL_RADIUS = 1.2;
-
-      const segments = [];
-      const angles = [];
-      for (let i = 0; i < SEGMENT_COUNT; i++) {
-        segments.push({ x: W * 0.5, y: H * 0.4 });
-        angles.push(0);
+      if (typeof THREE === 'undefined') {
+        console.error('Three.js failed to load — check your network/CDN access.');
+        canvas.style.background = 'radial-gradient(ellipse 100% 60% at 50% 0%, #14102a 0%, #05050a 70%)';
+        return;
       }
 
-      // Precompute tapered radius per segment (head thick -> tail thin)
-      const radii = new Array(SEGMENT_COUNT);
-      for (let i = 0; i < SEGMENT_COUNT; i++) {
-        const t = i / (SEGMENT_COUNT - 1);
-        radii[i] = HEAD_RADIUS * Math.pow(1 - t, 0.72) + TAIL_RADIUS;
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x06060a, 0.028);
+
+      const camera = new THREE.PerspectiveCamera(
+        55, window.innerWidth / window.innerHeight, 0.1, 200
+      );
+      camera.position.set(0, 14, 26);
+      camera.lookAt(0, 0, 0);
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+      });
+      renderer.setClearColor(0x06060a, 1);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // ---- Grid of points forming the wave field ----
+      const isMobile = window.innerWidth < 768;
+      const GRID_COLS = isMobile ? 44 : 72;
+      const GRID_ROWS = isMobile ? 44 : 72;
+      const SPACING = 1.15;
+      const COUNT = GRID_COLS * GRID_ROWS;
+
+      const positions = new Float32Array(COUNT * 3);
+      const basePositions = new Float32Array(COUNT * 2); // x,z rest coords
+      const colors = new Float32Array(COUNT * 3);
+
+      const colorNear = new THREE.Color(0x4ce9ff); // cyan near cursor
+      const colorEmerald = new THREE.Color(0x34e5b0);
+      const colorViolet = new THREE.Color(0xa374ff);
+      const tmpColor = new THREE.Color();
+
+      let idx = 0;
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          const x = (col - GRID_COLS / 2) * SPACING;
+          const z = (row - GRID_ROWS / 2) * SPACING;
+          positions[idx * 3] = x;
+          positions[idx * 3 + 1] = 0;
+          positions[idx * 3 + 2] = z;
+
+          basePositions[idx * 2] = x;
+          basePositions[idx * 2 + 1] = z;
+
+          const mixT = (row / GRID_ROWS + col / GRID_COLS) / 2;
+          tmpColor.copy(colorEmerald).lerp(colorViolet, mixT);
+          colors[idx * 3] = tmpColor.r;
+          colors[idx * 3 + 1] = tmpColor.g;
+          colors[idx * 3 + 2] = tmpColor.b;
+
+          idx++;
+        }
       }
 
-      // ---------- Target / mouse tracking ----------
-      let mouseX = W * 0.5, mouseY = H * 0.4;
-      let hasPointer = false;
-      let lastInputTime = performance.now();
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-      function setTarget(x, y) {
-        mouseX = x; mouseY = y;
-        hasPointer = true;
-        lastInputTime = performance.now();
+      const material = new THREE.PointsMaterial({
+        size: isMobile ? 0.16 : 0.14,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true
+      });
+
+      const points = new THREE.Points(geometry, material);
+      scene.add(points);
+
+      // ---- Mouse state: normalized (-1..1) for camera parallax,
+      //      and a world-space ground point for the "lift near cursor" effect ----
+      const mouseNDC = new THREE.Vector2(0, 0);
+      const mouseWorld = new THREE.Vector3(999, 0, 999);
+      const raycaster = new THREE.Raycaster();
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      let targetCamX = camera.position.x;
+      let targetCamY = camera.position.y;
+
+      function updateMouse(clientX, clientY) {
+        mouseNDC.x = (clientX / window.innerWidth) * 2 - 1;
+        mouseNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+
+        targetCamX = mouseNDC.x * 6;
+        targetCamY = 14 + mouseNDC.y * 3;
+
+        raycaster.setFromCamera(mouseNDC, camera);
+        const hit = new THREE.Vector3();
+        raycaster.ray.intersectPlane(groundPlane, hit);
+        if (hit) mouseWorld.copy(hit);
       }
 
-      window.addEventListener('mousemove', (e) => setTarget(e.clientX, e.clientY), { passive: true });
-      if (isTouchDevice) {
+      if (!isTouchDevice) {
+        window.addEventListener('mousemove', (e) => updateMouse(e.clientX, e.clientY), { passive: true });
+        window.addEventListener('mouseleave', () => { mouseWorld.set(999, 0, 999); });
+      } else {
         window.addEventListener('touchmove', (e) => {
-          if (e.touches && e.touches[0]) setTarget(e.touches[0].clientX, e.touches[0].clientY);
+          if (e.touches && e.touches[0]) updateMouse(e.touches[0].clientX, e.touches[0].clientY);
         }, { passive: true });
       }
-      window.addEventListener('mouseleave', () => { hasPointer = false; });
 
-      // ---------- Color helpers ----------
-      function lerp(a, b, t) { return a + (b - a) * t; }
-      function lerpColor(c1, c2, t) {
-        return [
-          Math.round(lerp(c1[0], c2[0], t)),
-          Math.round(lerp(c1[1], c2[1], t)),
-          Math.round(lerp(c1[2], c2[2], t))
-        ];
+      function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       }
-      const HEAD_COLOR = [76, 233, 255];   // cyan
-      const MID_COLOR  = [52, 229, 176];   // emerald
-      const TAIL_COLOR = [163, 116, 255];  // violet
+      window.addEventListener('resize', onResize);
 
-      function colorAt(t) {
-        if (t < 0.5) return lerpColor(HEAD_COLOR, MID_COLOR, t / 0.5);
-        return lerpColor(MID_COLOR, TAIL_COLOR, (t - 0.5) / 0.5);
+      const clock = new THREE.Clock();
+      const INTERACT_RADIUS = 6.5;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const elapsed = clock.getElapsedTime();
+
+        const posAttr = geometry.attributes.position;
+        const colAttr = geometry.attributes.color;
+        const arr = posAttr.array;
+        const colArr = colAttr.array;
+
+        for (let i = 0; i < COUNT; i++) {
+          const x = basePositions[i * 2];
+          const z = basePositions[i * 2 + 1];
+
+          // Sine/cosine height field: two overlapping wave trains
+          // moving in different directions for an organic, non-repeating swell
+          const wave =
+            Math.sin(x * 0.35 + elapsed * 0.9) * 1.1 +
+            Math.cos(z * 0.28 - elapsed * 0.7) * 1.1 +
+            Math.sin((x + z) * 0.18 + elapsed * 0.5) * 0.6;
+
+          let y = wave;
+
+          // Cursor lift: particles near the mouse's ground projection rise higher
+          const dx = x - mouseWorld.x;
+          const dz = z - mouseWorld.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          let proximity = 0;
+          if (dist < INTERACT_RADIUS) {
+            proximity = 1 - dist / INTERACT_RADIUS;
+            y += proximity * proximity * 4.5;
+          }
+
+          arr[i * 3 + 1] = y;
+
+          // Brighten toward cyan near the cursor, otherwise base emerald/violet gradient
+          const baseR = colors[i * 3], baseG = colors[i * 3 + 1], baseB = colors[i * 3 + 2];
+          if (proximity > 0) {
+            colArr[i * 3]     = baseR + (colorNear.r - baseR) * proximity;
+            colArr[i * 3 + 1] = baseG + (colorNear.g - baseG) * proximity;
+            colArr[i * 3 + 2] = baseB + (colorNear.b - baseB) * proximity;
+          } else {
+            colArr[i * 3]     = baseR;
+            colArr[i * 3 + 1] = baseG;
+            colArr[i * 3 + 2] = baseB;
+          }
+        }
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+
+        // Smooth camera parallax toward the target position
+        camera.position.x += (targetCamX - camera.position.x) * 0.03;
+        camera.position.y += (targetCamY - camera.position.y) * 0.03;
+        camera.lookAt(0, 0, 0);
+
+        renderer.render(scene, camera);
       }
-
-      // ---------- Tail spark particles ----------
-      const sparks = [];
-      const MAX_SPARKS = 40;
-      function spawnSpark(x, y, angle) {
-        if (sparks.length >= MAX_SPARKS) sparks.shift();
-        const spread = (Math.random() - 0.5) * 1.6;
-        const speed = 0.6 + Math.random() * 1.2;
-        sparks.push({
-          x, y,
-          vx: Math.cos(angle + spread) * speed,
-          vy: Math.sin(angle + spread) * speed,
-          life: 1.0,
-          decay: 0.015 + Math.random() * 0.02,
-          size: 1 + Math.random() * 1.8
-        });
-      }
-
-      // ---------- Animation state ----------
-      const clock = { start: performance.now(), last: performance.now() };
-      let wanderPhase = 0;
-
-      function getTarget(elapsed) {
-        const idleFor = performance.now() - lastInputTime;
-        if (hasPointer && idleFor < 2600) {
-          return { x: mouseX, y: mouseY };
-        }
-        // Idle wander: lissajous-style drifting point so the dragon
-        // keeps hunting gracefully even without cursor input
-        wanderPhase += 0.0;
-        const cx = W * 0.5, cy = H * 0.42;
-        const rx = Math.min(W, 1400) * 0.28;
-        const ry = Math.min(H, 900) * 0.22;
-        const wx = cx + Math.cos(elapsed * 0.35) * rx + Math.cos(elapsed * 0.9) * rx * 0.15;
-        const wy = cy + Math.sin(elapsed * 0.27) * ry + Math.sin(elapsed * 1.3) * ry * 0.15;
-        return { x: wx, y: wy };
-      }
-
-      function step(dt, elapsed) {
-        const target = getTarget(elapsed);
-
-        // ---- Head: eased toward target (frame-rate independent damping) ----
-        const headEase = 1 - Math.pow(0.0025, dt); // smooth, graceful catch-up
-        const head = segments[0];
-        const prevHeadX = head.x, prevHeadY = head.y;
-        head.x = lerp(head.x, target.x, headEase);
-        head.y = lerp(head.y, target.y, headEase);
-
-        let headAngle = Math.atan2(head.y - prevHeadY, head.x - prevHeadX);
-        if (Math.abs(head.x - prevHeadX) < 0.001 && Math.abs(head.y - prevHeadY) < 0.001) {
-          headAngle = angles[0] || 0;
-        }
-        angles[0] = headAngle;
-
-        // ---- Chain: each segment follows the previous at fixed distance,
-        //      plus a harmonic wave added to the angle (organic swimming
-        //      motion that persists even when the head is stationary) ----
-        const waveSpeed = 4.2;
-        const waveFreq = 0.42;
-        const waveAmp = 0.34; // radians
-
-        for (let i = 1; i < SEGMENT_COUNT; i++) {
-          const prev = segments[i - 1];
-          const cur = segments[i];
-          let baseAngle = Math.atan2(cur.y - prev.y, cur.x - prev.x);
-
-          const taper = 1 - i / SEGMENT_COUNT;
-          const wave = Math.sin(elapsed * waveSpeed - i * waveFreq) * waveAmp * (0.4 + taper * 0.6);
-          const finalAngle = baseAngle + wave * 0.0 + 0; // baseAngle already includes wave below
-
-          // Recompute angle including the wave contribution directly,
-          // so the fixed segment length is preserved exactly.
-          const angleWithWave = Math.atan2(cur.y - prev.y, cur.x - prev.x);
-          const waveAngle = angleWithWave; // placeholder to keep structure explicit
-
-          const usedAngle = Math.atan2(cur.y - prev.y, cur.x - prev.x);
-          const desiredAngle = usedAngle + wave - wave; // neutral; wave applied below via perpendicular target
-
-          // Standard distance-constraint placement:
-          const rawAngle = Math.atan2(cur.y - prev.y, cur.x - prev.x) + (wave);
-          cur.x = prev.x + Math.cos(rawAngle) * SEG_LEN;
-          cur.y = prev.y + Math.sin(rawAngle) * SEG_LEN;
-          angles[i] = rawAngle;
-        }
-
-        // ---- Tail spark cluster ----
-        const tail = segments[SEGMENT_COUNT - 1];
-        const tailAngle = angles[SEGMENT_COUNT - 1];
-        if (Math.random() < 0.6) spawnSpark(tail.x, tail.y, tailAngle + Math.PI);
-
-        for (let i = sparks.length - 1; i >= 0; i--) {
-          const s = sparks[i];
-          s.x += s.vx; s.y += s.vy;
-          s.life -= s.decay;
-          if (s.life <= 0) sparks.splice(i, 1);
-        }
-      }
-
-      function drawBody() {
-        // Build left/right offset polylines from spine + per-segment radius
-        const left = new Array(SEGMENT_COUNT);
-        const right = new Array(SEGMENT_COUNT);
-
-        for (let i = 0; i < SEGMENT_COUNT; i++) {
-          const a = angles[i] + Math.PI / 2;
-          const r = radii[i];
-          left[i]  = { x: segments[i].x + Math.cos(a) * r, y: segments[i].y + Math.sin(a) * r };
-          right[i] = { x: segments[i].x - Math.cos(a) * r, y: segments[i].y - Math.sin(a) * r };
-        }
-
-        // Body fill: gradient along the spine, head -> tail
-        const grad = ctx.createLinearGradient(segments[0].x, segments[0].y, segments[SEGMENT_COUNT - 1].x, segments[SEGMENT_COUNT - 1].y);
-        grad.addColorStop(0, 'rgba(76,233,255,0.85)');
-        grad.addColorStop(0.5, 'rgba(52,229,176,0.75)');
-        grad.addColorStop(1, 'rgba(163,116,255,0.55)');
-
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.shadowBlur = 18;
-        ctx.shadowColor = 'rgba(76,233,255,0.55)';
-        ctx.fillStyle = grad;
-
-        ctx.beginPath();
-        ctx.moveTo(left[0].x, left[0].y);
-        for (let i = 1; i < SEGMENT_COUNT; i++) ctx.lineTo(left[i].x, left[i].y);
-        for (let i = SEGMENT_COUNT - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
-        ctx.closePath();
-        ctx.fill();
-
-        // Spine highlight
-        ctx.shadowBlur = 10;
-        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.moveTo(segments[0].x, segments[0].y);
-        for (let i = 1; i < SEGMENT_COUNT; i++) ctx.lineTo(segments[i].x, segments[i].y);
-        ctx.stroke();
-
-        // ---- Scales / fin ticks flanking the spine ----
-        for (let i = 2; i < SEGMENT_COUNT - 4; i += 2) {
-          const t = i / SEGMENT_COUNT;
-          const [r, g, b] = colorAt(t);
-          const a = angles[i] + Math.PI / 2;
-          const len = radii[i] * 1.15;
-          const cx = segments[i].x, cy = segments[i].y;
-
-          ctx.strokeStyle = `rgba(${r},${g},${b},0.75)`;
-          ctx.lineWidth = 1;
-          ctx.shadowColor = `rgba(${r},${g},${b},0.8)`;
-          ctx.shadowBlur = 8;
-          ctx.beginPath();
-          ctx.moveTo(cx - Math.cos(a) * len, cy - Math.sin(a) * len);
-          ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len);
-          ctx.stroke();
-        }
-
-        // ---- Dorsal fin spikes (front two-thirds of the body) ----
-        for (let i = 3; i < SEGMENT_COUNT * 0.65; i += 3) {
-          const t = i / SEGMENT_COUNT;
-          const [r, g, b] = colorAt(t);
-          const spineDir = angles[i];
-          const outward = spineDir - Math.PI / 2;
-          const finBase = radii[i] * 0.9;
-          const finHeight = radii[i] * 1.9 * (1 - t * 0.6);
-
-          const bx = segments[i].x + Math.cos(outward) * finBase * 0.3;
-          const by = segments[i].y + Math.sin(outward) * finBase * 0.3;
-          const tipX = segments[i].x + Math.cos(outward) * (finBase + finHeight);
-          const tipY = segments[i].y + Math.sin(outward) * (finBase + finHeight);
-          const backX = segments[i].x + Math.cos(spineDir + Math.PI) * finBase * 0.7 + Math.cos(outward) * finBase * 0.2;
-          const backY = segments[i].y + Math.sin(spineDir + Math.PI) * finBase * 0.7 + Math.sin(outward) * finBase * 0.2;
-
-          ctx.fillStyle = `rgba(${r},${g},${b},0.35)`;
-          ctx.shadowColor = `rgba(${r},${g},${b},0.7)`;
-          ctx.shadowBlur = 10;
-          ctx.beginPath();
-          ctx.moveTo(bx, by);
-          ctx.lineTo(tipX, tipY);
-          ctx.lineTo(backX, backY);
-          ctx.closePath();
-          ctx.fill();
-        }
-
-        ctx.restore();
-      }
-
-      function drawHead() {
-        const head = segments[0];
-        const a = angles[0];
-
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-
-        // Head glow core
-        ctx.shadowBlur = 26;
-        ctx.shadowColor = 'rgba(76,233,255,0.9)';
-        ctx.fillStyle = 'rgba(76,233,255,0.9)';
-        ctx.beginPath();
-        ctx.arc(head.x, head.y, HEAD_RADIUS * 0.9, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Twin horns swept back from the skull
-        ctx.strokeStyle = 'rgba(76,233,255,0.6)';
-        ctx.lineWidth = 1.6;
-        ctx.shadowBlur = 12;
-        for (const side of [-1, 1]) {
-          const hornBaseAngle = a + Math.PI / 2 * side * 0.55 + Math.PI;
-          const bx = head.x + Math.cos(a + (Math.PI/2)*side*0.6) * HEAD_RADIUS * 0.7;
-          const by = head.y + Math.sin(a + (Math.PI/2)*side*0.6) * HEAD_RADIUS * 0.7;
-          const tx = bx + Math.cos(hornBaseAngle) * HEAD_RADIUS * 1.6;
-          const ty = by + Math.sin(hornBaseAngle) * HEAD_RADIUS * 1.6;
-          ctx.beginPath();
-          ctx.moveTo(bx, by);
-          ctx.quadraticCurveTo(
-            bx + Math.cos(a) * HEAD_RADIUS * 0.4,
-            by + Math.sin(a) * HEAD_RADIUS * 0.4,
-            tx, ty
-          );
-          ctx.stroke();
-        }
-
-        // Eyes
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = 'rgba(255,255,255,0.9)';
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
-        for (const side of [-1, 1]) {
-          const ea = a + Math.PI / 2 * side * 0.5;
-          const ex = head.x + Math.cos(a) * HEAD_RADIUS * 0.35 + Math.cos(ea) * HEAD_RADIUS * 0.45;
-          const ey = head.y + Math.sin(a) * HEAD_RADIUS * 0.35 + Math.sin(ea) * HEAD_RADIUS * 0.45;
-          ctx.beginPath();
-          ctx.arc(ex, ey, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        ctx.restore();
-      }
-
-      function drawTailSparks() {
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        for (const s of sparks) {
-          const [r, g, b] = TAIL_COLOR;
-          ctx.fillStyle = `rgba(${r},${g},${b},${s.life * 0.8})`;
-          ctx.shadowColor = `rgba(${r},${g},${b},0.9)`;
-          ctx.shadowBlur = 8;
-          ctx.beginPath();
-          ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-
-      function render() {
-        // Trail fade — dark rect drawn with normal compositing so the
-        // glow layers underneath fade gracefully rather than snapping off
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(8, 8, 13, 0.22)';
-        ctx.fillRect(0, 0, W, H);
-
-        drawBody();
-        drawTailSparks();
-        drawHead();
-      }
-
-      function loop(now) {
-        requestAnimationFrame(loop);
-        const dt = Math.min((now - clock.last) / 1000, 0.05);
-        clock.last = now;
-        const elapsed = (now - clock.start) / 1000;
-
-        step(dt, elapsed);
-        render();
-      }
-
-      // Paint initial dark background so there's no flash of transparency
-      ctx.fillStyle = '#08080d';
-      ctx.fillRect(0, 0, W, H);
 
       if (prefersReduced) {
-        // Single static, low-motion pose
-        step(0.016, 0);
-        render();
+        renderer.render(scene, camera);
       } else {
-        requestAnimationFrame(loop);
+        animate();
       }
     })();
   </script>
