@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alex Rivera — Digital Craftsman</title>
+<meta name="description" content="Alex Rivera builds fast, thoughtful digital experiences.">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          charcoal: '#0a0a0f',
+          emerald: '#34e5b0',
+          violet: '#a374ff',
+          cyan: '#4ce9ff',
+          muted: '#9494a6',
+        },
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+
+<style>
+  html { scroll-behavior: smooth; }
+
+  /* CRITICAL: body must NOT have an opaque background-color, or it will
+     paint over any fixed element with z-index below it — including a
+     z-index:0 canvas sitting under z-index:10+ content. Keep this
+     transparent; the canvas paints its own dark backdrop instead. */
+  body {
+    background-color: transparent;
+    color: #f5f5f7;
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  html {
+    background-color: #06060a; /* fallback color while WebGL boots */
+  }
+
+  #bg-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;              /* NOT negative — sits above <html>/<body>
+                                 background paint, below all content */
+    pointer-events: none;
+    display: block;
+  }
+
+  /* Everything visible in the page content sits above the canvas */
+  header, section, footer { position: relative; z-index: 10; }
+
+  .section-pad { padding-top: 6rem; padding-bottom: 6rem; }
+  ::selection { background: #34e5b0; color: #0a0a0f; }
+
+  .cursor-blink::after {
+    content: '';
+    display: inline-block;
+    width: 3px; height: 1em;
+    background: #34e5b0;
+    margin-left: 4px;
+    vertical-align: text-bottom;
+    animation: blink 1s step-start infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .grad-text {
+    background: linear-gradient(90deg, #4ce9ff, #a374ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glass {
+    background: rgba(8, 8, 14, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .text-shadow-glow { text-shadow: 0 2px 24px rgba(0,0,0,0.6); }
+
+  .btn-primary { background: #34e5b0; color: #0a0a0f; transition: all 0.25s ease; }
+  .btn-primary:hover {
+    box-shadow: 0 0 0 1px #34e5b0, 0 0 28px rgba(52,229,176,0.45);
+    transform: translateY(-2px);
+  }
+  .btn-secondary {
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(10px);
+    color: #f5f5f7;
+    border: 1px solid rgba(255,255,255,0.15);
+    transition: all 0.25s ease;
+  }
+  .btn-secondary:hover {
+    border-color: #a374ff;
+    box-shadow: 0 0 24px rgba(163,116,255,0.3);
+    transform: translateY(-2px);
+  }
+  .btn-ghost { color: #9494a6; transition: all 0.2s ease; }
+  .btn-ghost:hover { color: #f5f5f7; }
+
+  .link-card {
+    background: rgba(8, 8, 14, 0.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.25s ease;
+  }
+  .link-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(76,233,255,0.45);
+    box-shadow: 0 8px 30px rgba(76,233,255,0.15);
+  }
+
+  .project-card {
+    background: rgba(8, 8, 14, 0.6);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.09);
+    transition: all 0.35s ease;
+  }
+  .project-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(163,116,255,0.45);
+    box-shadow: 0 20px 45px rgba(0,0,0,0.5), 0 0 30px rgba(163,116,255,0.15);
+  }
+  .project-card:hover .project-thumb { transform: scale(1.04); }
+  .project-thumb { transition: transform 0.5s ease; }
+
+  .tech-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+
+  .view-code-link { transition: gap 0.2s ease, color 0.2s ease; }
+  .view-code-link:hover { color: #4ce9ff; gap: 0.6rem; }
+
+  .nav-link { position: relative; }
+  .nav-link::after {
+    content: ''; position: absolute; left: 0; bottom: -4px;
+    width: 0; height: 1px; background: #34e5b0;
+    transition: width 0.25s ease;
+  }
+  .nav-link:hover::after { width: 100%; }
+
+  .eyebrow { font-family: 'JetBrains Mono', monospace; letter-spacing: 0.15em; }
+  .email-link { transition: all 0.25s ease; }
+  .email-link:hover { text-shadow: 0 0 20px rgba(52,229,176,0.6); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+
+<body class="font-body antialiased">
+
+  <canvas id="bg-canvas"></canvas>
+
+  <header class="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+    <nav class="max-w-6xl mx-auto flex items-center justify-between px-6 py-4">
+      <a href="#top" class="font-display font-semibold text-lg tracking-tight">
+        alex<span class="text-emerald">.</span>dev
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm text-muted font-medium">
+        <a href="#links" class="nav-link hover:text-white">Links</a>
+        <a href="#projects" class="nav-link hover:text-white">Work</a>
+        <a href="#contact" class="nav-link hover:text-white">Contact</a>
+      </div>
+      <a href="#contact" class="btn-primary text-sm font-semibold px-4 py-2 rounded-full">Say hi</a>
+    </nav>
+  </header>
+
+  <section id="top" class="section-pad pt-40 md:pt-48 px-6">
+    <div class="max-w-4xl mx-auto">
+      <p class="eyebrow text-emerald text-xs mb-6 uppercase text-shadow-glow">// available for freelance — Q3 2026</p>
+      <h1 class="font-display font-semibold text-4xl sm:text-5xl md:text-7xl leading-[1.05] tracking-tight text-shadow-glow">
+        Hi, I'm Alex.<br>
+        I build <span class="grad-text">digital experiences</span> that feel alive.
+      </h1>
+      <p class="mt-8 text-lg md:text-xl text-muted max-w-2xl font-mono text-shadow-glow">
+        <span class="text-white/80">$</span> full-stack engineer, obsessed with fast interfaces and quiet code<span class="cursor-blink"></span>
+      </p>
+      <div class="mt-10 flex flex-wrap gap-4">
+        <a href="#projects" class="btn-primary font-semibold px-6 py-3 rounded-full inline-flex items-center gap-2">
+          View my work <i data-lucide="arrow-down-right" class="w-4 h-4"></i>
+        </a>
+        <a href="#contact" class="btn-secondary font-semibold px-6 py-3 rounded-full inline-flex items-center gap-2">
+          Get in touch <i data-lucide="mail" class="w-4 h-4"></i>
+        </a>
+        <a href="#" class="btn-ghost font-semibold px-6 py-3 rounded-full inline-flex items-center gap-2 underline underline-offset-4 decoration-white/20">
+          Resume <i data-lucide="file-text" class="w-4 h-4"></i>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="links" class="section-pad pt-0 px-6">
+    <div class="max-w-4xl mx-auto">
+      <p class="eyebrow text-violet text-xs mb-4 uppercase text-shadow-glow">find me elsewhere</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="link-card rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-center">
+          <i data-lucide="github" class="w-6 h-6 text-white"></i>
+          <span class="text-sm font-medium">GitHub</span>
+        </a>
+        <a href="https://linkedin.com/" target="_blank" rel="noopener noreferrer" class="link-card rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-center">
+          <i data-lucide="linkedin" class="w-6 h-6 text-white"></i>
+          <span class="text-sm font-medium">LinkedIn</span>
+        </a>
+        <a href="https://x.com/" target="_blank" rel="noopener noreferrer" class="link-card rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-center">
+          <i data-lucide="twitter" class="w-6 h-6 text-white"></i>
+          <span class="text-sm font-medium">Twitter / X</span>
+        </a>
+        <a href="#" class="link-card rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-center">
+          <i data-lucide="download" class="w-6 h-6 text-white"></i>
+          <span class="text-sm font-medium">Resume</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="projects" class="section-pad px-6">
+    <div class="max-w-6xl mx-auto">
+      <p class="eyebrow text-emerald text-xs mb-3 uppercase text-shadow-glow">selected work</p>
+      <h2 class="font-display font-semibold text-3xl md:text-4xl mb-12 tracking-tight text-shadow-glow">Featured projects</h2>
+      <div class="grid md:grid-cols-3 gap-6">
+
+        <div class="project-card rounded-2xl overflow-hidden flex flex-col">
+          <div class="project-thumb h-44 w-full" style="background: linear-gradient(135deg, #4ce9ff 0%, #0a0a0f 100%);"></div>
+          <div class="p-6 flex flex-col flex-1">
+            <h3 class="font-display font-semibold text-xl mb-2">Pulse Analytics</h3>
+            <p class="text-muted text-sm mb-4 flex-1">A real-time dashboard for tracking product usage across web and mobile. Built for teams who need answers fast.</p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">React</span>
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">Node.js</span>
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">PostgreSQL</span>
+            </div>
+            <a href="#" class="view-code-link inline-flex items-center gap-2 text-sm font-medium text-white/80">View code <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+          </div>
+        </div>
+
+        <div class="project-card rounded-2xl overflow-hidden flex flex-col">
+          <div class="project-thumb h-44 w-full" style="background: linear-gradient(135deg, #a374ff 0%, #0a0a0f 100%);"></div>
+          <div class="p-6 flex flex-col flex-1">
+            <h3 class="font-display font-semibold text-xl mb-2">Forma Editor</h3>
+            <p class="text-muted text-sm mb-4 flex-1">A distraction-free markdown editor with live preview and versioned history, shipping as a desktop app.</p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">TypeScript</span>
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">Electron</span>
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">Tailwind</span>
+            </div>
+            <a href="#" class="view-code-link inline-flex items-center gap-2 text-sm font-medium text-white/80">View code <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+          </div>
+        </div>
+
+        <div class="project-card rounded-2xl overflow-hidden flex flex-col">
+          <div class="project-thumb h-44 w-full" style="background: linear-gradient(135deg, #34e5b0 0%, #a374ff 100%);"></div>
+          <div class="p-6 flex flex-col flex-1">
+            <h3 class="font-display font-semibold text-xl mb-2">Routewise</h3>
+            <p class="text-muted text-sm mb-4 flex-1">A logistics planner that finds cost-optimal delivery routes using live traffic data.</p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">Python</span>
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">FastAPI</span>
+              <span class="tech-badge px-2 py-1 rounded-md text-muted">Docker</span>
+            </div>
+            <a href="#" class="view-code-link inline-flex items-center gap-2 text-sm font-medium text-white/80">View code <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <footer id="contact" class="border-t border-white/5 px-6 pt-20 pb-10">
+    <div class="max-w-4xl mx-auto text-center">
+      <h2 class="font-display font-semibold text-3xl md:text-5xl tracking-tight mb-4 text-shadow-glow">
+        Let's <span class="grad-text">collaborate.</span>
+      </h2>
+      <p class="text-muted mb-6">Got an idea, a project, or just want to say hi? My inbox is open.</p>
+      <a href="mailto:hello@alexrivera.dev" class="email-link font-mono text-xl md:text-2xl text-emerald inline-block mb-12">hello@alexrivera.dev</a>
+      <div class="flex items-center justify-center gap-6 mb-10">
+        <a href="https://github.com/" target="_blank" rel="noopener noreferrer" class="btn-ghost"><i data-lucide="github" class="w-5 h-5"></i></a>
+        <a href="https://linkedin.com/" target="_blank" rel="noopener noreferrer" class="btn-ghost"><i data-lucide="linkedin" class="w-5 h-5"></i></a>
+        <a href="https://x.com/" target="_blank" rel="noopener noreferrer" class="btn-ghost"><i data-lucide="twitter" class="w-5 h-5"></i></a>
+      </div>
+      <p class="text-xs text-muted/70 font-mono">© <span id="year"></span> Alex Rivera. Built with intent, not a template.</p>
+    </div>
+  </footer>
+
+  <script>
+    lucide.createIcons();
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    /* =========================================================
+       3D REACTIVE WAVE FIELD (Three.js)
+       Real depth: a grid of points in 3D space, each oscillating
+       in Z via a sine/cosine height function, camera parallax on
+       mouse move, particles brighten/lift near the cursor.
+       ========================================================= */
+    (function initBackground() {
+      const canvas = document.getElementById('bg-canvas');
+      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const isTouchDevice = !window.matchMedia('(hover: hover)').matches;
+
+      if (typeof THREE === 'undefined') {
+        console.error('Three.js failed to load — check your network/CDN access.');
+        canvas.style.background = 'radial-gradient(ellipse 100% 60% at 50% 0%, #14102a 0%, #05050a 70%)';
+        return;
+      }
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x06060a, 0.028);
+
+      const camera = new THREE.PerspectiveCamera(
+        55, window.innerWidth / window.innerHeight, 0.1, 200
+      );
+      camera.position.set(0, 14, 26);
+      camera.lookAt(0, 0, 0);
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+      });
+      renderer.setClearColor(0x06060a, 1);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // ---- Grid of points forming the wave field ----
+      const isMobile = window.innerWidth < 768;
+      const GRID_COLS = isMobile ? 44 : 72;
+      const GRID_ROWS = isMobile ? 44 : 72;
+      const SPACING = 1.15;
+      const COUNT = GRID_COLS * GRID_ROWS;
+
+      const positions = new Float32Array(COUNT * 3);
+      const basePositions = new Float32Array(COUNT * 2); // x,z rest coords
+      const colors = new Float32Array(COUNT * 3);
+
+      const colorNear = new THREE.Color(0x4ce9ff); // cyan near cursor
+      const colorEmerald = new THREE.Color(0x34e5b0);
+      const colorViolet = new THREE.Color(0xa374ff);
+      const tmpColor = new THREE.Color();
+
+      let idx = 0;
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          const x = (col - GRID_COLS / 2) * SPACING;
+          const z = (row - GRID_ROWS / 2) * SPACING;
+          positions[idx * 3] = x;
+          positions[idx * 3 + 1] = 0;
+          positions[idx * 3 + 2] = z;
+
+          basePositions[idx * 2] = x;
+          basePositions[idx * 2 + 1] = z;
+
+          const mixT = (row / GRID_ROWS + col / GRID_COLS) / 2;
+          tmpColor.copy(colorEmerald).lerp(colorViolet, mixT);
+          colors[idx * 3] = tmpColor.r;
+          colors[idx * 3 + 1] = tmpColor.g;
+          colors[idx * 3 + 2] = tmpColor.b;
+
+          idx++;
+        }
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const material = new THREE.PointsMaterial({
+        size: isMobile ? 0.16 : 0.14,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true
+      });
+
+      const points = new THREE.Points(geometry, material);
+      scene.add(points);
+
+      // ---- Mouse state: normalized (-1..1) for camera parallax,
+      //      and a world-space ground point for the "lift near cursor" effect ----
+      const mouseNDC = new THREE.Vector2(0, 0);
+      const mouseWorld = new THREE.Vector3(999, 0, 999);
+      const raycaster = new THREE.Raycaster();
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      let targetCamX = camera.position.x;
+      let targetCamY = camera.position.y;
+
+      function updateMouse(clientX, clientY) {
+        mouseNDC.x = (clientX / window.innerWidth) * 2 - 1;
+        mouseNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+
+        targetCamX = mouseNDC.x * 6;
+        targetCamY = 14 + mouseNDC.y * 3;
+
+        raycaster.setFromCamera(mouseNDC, camera);
+        const hit = new THREE.Vector3();
+        raycaster.ray.intersectPlane(groundPlane, hit);
+        if (hit) mouseWorld.copy(hit);
+      }
+
+      if (!isTouchDevice) {
+        window.addEventListener('mousemove', (e) => updateMouse(e.clientX, e.clientY), { passive: true });
+        window.addEventListener('mouseleave', () => { mouseWorld.set(999, 0, 999); });
+      } else {
+        window.addEventListener('touchmove', (e) => {
+          if (e.touches && e.touches[0]) updateMouse(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: true });
+      }
+
+      function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      }
+      window.addEventListener('resize', onResize);
+
+      const clock = new THREE.Clock();
+      const INTERACT_RADIUS = 6.5;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const elapsed = clock.getElapsedTime();
+
+        const posAttr = geometry.attributes.position;
+        const colAttr = geometry.attributes.color;
+        const arr = posAttr.array;
+        const colArr = colAttr.array;
+
+        for (let i = 0; i < COUNT; i++) {
+          const x = basePositions[i * 2];
+          const z = basePositions[i * 2 + 1];
+
+          // Sine/cosine height field: two overlapping wave trains
+          // moving in different directions for an organic, non-repeating swell
+          const wave =
+            Math.sin(x * 0.35 + elapsed * 0.9) * 1.1 +
+            Math.cos(z * 0.28 - elapsed * 0.7) * 1.1 +
+            Math.sin((x + z) * 0.18 + elapsed * 0.5) * 0.6;
+
+          let y = wave;
+
+          // Cursor lift: particles near the mouse's ground projection rise higher
+          const dx = x - mouseWorld.x;
+          const dz = z - mouseWorld.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          let proximity = 0;
+          if (dist < INTERACT_RADIUS) {
+            proximity = 1 - dist / INTERACT_RADIUS;
+            y += proximity * proximity * 4.5;
+          }
+
+          arr[i * 3 + 1] = y;
+
+          // Brighten toward cyan near the cursor, otherwise base emerald/violet gradient
+          const baseR = colors[i * 3], baseG = colors[i * 3 + 1], baseB = colors[i * 3 + 2];
+          if (proximity > 0) {
+            colArr[i * 3]     = baseR + (colorNear.r - baseR) * proximity;
+            colArr[i * 3 + 1] = baseG + (colorNear.g - baseG) * proximity;
+            colArr[i * 3 + 2] = baseB + (colorNear.b - baseB) * proximity;
+          } else {
+            colArr[i * 3]     = baseR;
+            colArr[i * 3 + 1] = baseG;
+            colArr[i * 3 + 2] = baseB;
+          }
+        }
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+
+        // Smooth camera parallax toward the target position
+        camera.position.x += (targetCamX - camera.position.x) * 0.03;
+        camera.position.y += (targetCamY - camera.position.y) * 0.03;
+        camera.lookAt(0, 0, 0);
+
+        renderer.render(scene, camera);
+      }
+
+      if (prefersReduced) {
+        renderer.render(scene, camera);
+      } else {
+        animate();
+      }
+    })();
+  </script>
+
+</body>
+</html>
